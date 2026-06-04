@@ -10,6 +10,10 @@ public class OrbitalAgent extends Agent {
     // protected String currentPlace;
     private StationData currentStation;
 
+    // spacecraft state of the agent
+    private double[] myR;
+    private double[] myV;
+
     private double[][] M_f;
     private double[][] N_f;
     private double[][] S_f;
@@ -21,6 +25,26 @@ public class OrbitalAgent extends Agent {
     private double c;
     private double n;
 
+    // frame vectors
+    private double[] x_hat;
+    private double[] y_hat;
+    private double[] z_hat;
+
+    private double[] ref_r;
+    private double[] ref_v;
+
+    // private double a;       // semi major axis
+    // private double e;       // eccentricity
+    // private double i;       // inclination
+    // private double O;       // Right ascension of asc node
+    // private double o;       // arg of periapsis 
+    // private double f;       // true anamoly
+    // private double M;       // mean anamoly
+    // private double t_p;     // time of periapsis
+
+    private final double MU = 3.986e5;
+    private final double EPSILON = 1e-4;
+
     private String resultHistory = "";
 
     public OrbitalAgent() {
@@ -31,10 +55,18 @@ public class OrbitalAgent extends Agent {
         destination = args;
     }
 
+    public OrbitalAgent(double[] r, double[] v, String[] destinations) {
+        this.myR = r;
+        this.myV = v;
+        this.destination = destinations;
+    }
+
     public void init() {
         System.out.println("OrbitalAgent(" + getId() + ") starting orbital calculation");
-        // StationData station = fetchStationData();
-        runOrbitalCalculation();
+        StationData station = fetchStationData();
+        this.myR = station.r;
+        this.myV = station.v;
+        // runOrbitalCalculation();
 
         if (destination.length > 0) {
             String next = destination[hopCount];
@@ -44,6 +76,11 @@ public class OrbitalAgent extends Agent {
             System.out.println("Orbital result history:");
             System.out.println(resultHistory);
         }
+    }
+
+    public void setState(double[] r, double[] v) {
+        this.myR = r;
+        this.myV = v;
     }
 
     public void setStationData(StationData station) {
@@ -151,6 +188,108 @@ public class OrbitalAgent extends Agent {
         return T;
     }
 
+    private double norm(double[] v) {
+        double s = 0;
+
+        for(int i=0;i<3;i++)
+            s += v[i] * v[i];
+
+        return Math.sqrt(s);
+    }
+
+    private double[] unit(double[] v) {
+        double n = norm(v);
+
+        return new double[] {
+            v[0] / n,
+            v[1] / n,
+            v[2] / n
+        };
+    }
+
+    private double[] cross(double[] a, double[] b) {
+        return new double[] {
+            a[1]*b[2] - a[2]*b[1],
+            a[2]*b[0] - a[0]*b[2],
+            a[0]*b[1] - a[1]*b[0]
+        };
+    }
+
+    private double[] scale(double s, double[] v) {
+        return new double[] {
+            s*v[0],
+            s*v[1],
+            s*v[2]
+        };
+    }
+
+    private void buildFrame(double[] r, double[] v) {
+        ref_r = r;
+        ref_v = v;
+
+        x_hat = unit(r);
+        y_hat = unit(v);
+        z_hat = cross(x_hat, y_hat);
+    }
+
+    private double[][] getBasisMatrix() {
+
+        double[][] basis = new double[3][3];
+
+        for(int i=0;i<3;i++) {
+            basis[0][i] = x_hat[i];
+            basis[1][i] = y_hat[i];
+            basis[2][i] = z_hat[i];
+        }
+
+        return basis;
+    }
+
+    private double[][] getReverseBasisMatrix() {
+
+        double[][] basis = new double[3][3];
+
+        for(int i=0;i<3;i++) {
+            basis[i][0] = x_hat[i];
+            basis[i][1] = y_hat[i];
+            basis[i][2] = z_hat[i];
+        }
+
+        return basis;
+    }
+
+    private double[] transformToFrame(double[] pos, double[] vel, double nMean) {
+
+        double[] dr = vectorSub(pos, ref_r);
+
+        double[] dv = vectorSub(vel, ref_v);
+
+        double[] rot = cross(scale(nMean, z_hat), dr);
+
+        dv = vectorSub(dv, rot);
+
+        double[][] basis = getBasisMatrix();
+
+        double[] drf = matrixTransform(basis, dr);
+        double[] dvf = matrixTransform(basis, dv);
+
+        double[] state = new double[6];
+
+        for(int i=0;i<3;i++) {
+            state[i] = drf[i];
+            state[i+3] = dvf[i];
+        }
+
+        return state;
+    }
+
+    private double[] transformImpulseFromFrame(double[] dv) {
+
+        double[][] basis = getReverseBasisMatrix();
+
+        return matrixTransform(basis, dv);
+    }
+
     // Multiply two matrices.
     private double[][] matrixMultiply(double[][] o1, double[][] o2) {
         double[][] prod = new double[3][3];
@@ -168,13 +307,6 @@ public class OrbitalAgent extends Agent {
         return prod;
     }
     
-    /*
-     * Add or subtract two 3x3 matrices.
-     * @param op Subtract if op < 0, add otherwise
-     * @param o1 first (left) matrix
-     * @param o2 second (right) matrix
-     * @return 3x3 matrix result
-     */
     private double[][] elementwiseOpMatrix(int op, double[][] o1, double[][] o2) {
         double[][] result = new double[3][3];
         for(int i = 0; i < 3; i++) {
@@ -273,7 +405,6 @@ public class OrbitalAgent extends Agent {
         int scenario = scenarioIndex;
 
         StationData station = fetchStationData();
-
         if (station == null) {
             System.out.println("No station data found");
             return;
@@ -281,8 +412,18 @@ public class OrbitalAgent extends Agent {
 
         double t = station.t;
         double n = station.n;
-        double[] dr0 = station.r;
-        double[] dv0 = station.v;
+
+        buildFrame(station.r, station.v);
+        // transform the agent's spacecraft state
+        double[] transformed = transformToFrame(myR, myV, station.n);
+
+        double[] dr0 = new double[3];
+        double[] dv0 = new double[3];
+
+        for(int i=0;i<3;i++) {
+            dr0[i] = transformed[i];
+            dv0[i] = transformed[i+3];
+        }
 
         initStateMatrix(t, n);
 
@@ -293,10 +434,12 @@ public class OrbitalAgent extends Agent {
 
         System.out.print("initial: \t");
         double[] deltaVi = initialImpulse(dr0, dv0);
+        deltaVi = transformImpulseFromFrame(deltaVi);
         printVector(deltaVi);
 
         System.out.print("final: \t\t");
         double[] deltaVf = endImpulse(dr0);
+        deltaVf = transformImpulseFromFrame(deltaVf);
         printVector(deltaVf);
 
         resultHistory += "Scenario " + scenario +
