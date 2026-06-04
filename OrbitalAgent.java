@@ -1,5 +1,4 @@
 import Mobile.*;
-// package Mobile;
 import java.rmi.*;
 
 public class OrbitalAgent extends Agent {
@@ -7,8 +6,10 @@ public class OrbitalAgent extends Agent {
     public String[] destination;
     public int hopCount = 0;
     private int scenarioIndex = 0;
-    // protected String currentPlace;
-    private StationData currentStation;
+
+    private long startTime;
+    private long endTime;
+    private long lastHopTime;
 
     // spacecraft state of the agent
     private double[] myR;
@@ -33,18 +34,6 @@ public class OrbitalAgent extends Agent {
     private double[] ref_r;
     private double[] ref_v;
 
-    // private double a;       // semi major axis
-    // private double e;       // eccentricity
-    // private double i;       // inclination
-    // private double O;       // Right ascension of asc node
-    // private double o;       // arg of periapsis 
-    // private double f;       // true anamoly
-    // private double M;       // mean anamoly
-    // private double t_p;     // time of periapsis
-
-    private final double MU = 3.986e5;
-    private final double EPSILON = 1e-4;
-
     private String resultHistory = "";
 
     public OrbitalAgent() {
@@ -61,20 +50,33 @@ public class OrbitalAgent extends Agent {
         this.destination = destinations;
     }
 
+    private void finishExecution() {
+        endTime = System.nanoTime();
+
+        double seconds = (endTime - startTime) / 1e12;
+        // double seconds = (endTime - startTime) / 1e9;
+
+        System.out.println("OrbitalAgent(" + getId() + ") completed all scenarios.");
+        System.out.println("Orbital result history:");
+        System.out.println(resultHistory);
+
+        System.out.printf("Execution time: %.3f s\n", seconds);
+    }
+
     public void init() {
         System.out.println("OrbitalAgent(" + getId() + ") starting orbital calculation");
+        startTime = System.nanoTime();
+        lastHopTime = startTime; 
         StationData station = fetchStationData();
         this.myR = station.r;
         this.myV = station.v;
-        // runOrbitalCalculation();
 
         if (destination.length > 0) {
             String next = destination[hopCount];
             hopCount++;
             hop(next, "step");
         } else {
-            System.out.println("Orbital result history:");
-            System.out.println(resultHistory);
+            finishExecution();
         }
     }
 
@@ -82,15 +84,10 @@ public class OrbitalAgent extends Agent {
         this.myR = r;
         this.myV = v;
     }
-
-    public void setStationData(StationData station) {
-        currentStation = station;
-    }
-
+    
     private StationData fetchStationData() {
         System.out.println("currentPlace = " + currentPlace);
         try {
-            //use the full RMI URL
             PlaceInterface place = (PlaceInterface) Naming.lookup(currentPlace);
             return place.getStationData();
         }
@@ -393,11 +390,11 @@ public class OrbitalAgent extends Agent {
         if (hopCount < destination.length) {
             String next = destination[hopCount];
             hopCount++;
+            System.out.println("Hop took: " + (Math.abs((System.nanoTime() - lastHopTime)/1e6)) + " ns");
+            lastHopTime = System.nanoTime();
             hop(next, "step");
         } else {
-            System.out.println("OrbitalAgent(" + getId() + ") completed all scenarios.");
-            System.out.println("Orbital result history:");
-            System.out.println(resultHistory);
+            finishExecution();
         }
     }
     

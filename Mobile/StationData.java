@@ -13,6 +13,15 @@ public class StationData implements Serializable {
     public double[] r;
     public double[] v;
 
+    // orbital elements
+    public double a;
+    public double e;
+    public double i;
+    public double O;
+    public double o;
+    public double f;
+    public double M;
+
     public StationData(String name, double t, double n, double[] r, double[] v) {
         this.name = name;
         this.t = t;
