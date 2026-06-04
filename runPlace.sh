@@ -1,3 +1,3 @@
 #!/bin/sh
 
-java -cp Mobile.jar Mobile.Place 58090
+java -cp Mobile.jar Mobile.Place 58090 "$1"

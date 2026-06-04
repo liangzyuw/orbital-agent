@@ -1,14 +1,14 @@
 import Mobile.*;
-
-// Place 1: short transfer time
-// Place 2: medium transfer time
-// Place 3: longer transfer time
-// Place 4: different mean motion / orbit rate
+// package Mobile;
+import java.rmi.*;
 
 public class OrbitalAgent extends Agent {
     
     public String[] destination;
     public int hopCount = 0;
+    private int scenarioIndex = 0;
+    // protected String currentPlace;
+    private StationData currentStation;
 
     private double[][] M_f;
     private double[][] N_f;
@@ -23,35 +23,6 @@ public class OrbitalAgent extends Agent {
 
     private String resultHistory = "";
 
-    // arrays for test cases
-    private double[] tValues = {
-        Math.PI / 4,
-        Math.PI / 2,
-        3 * Math.PI / 4,
-        5 * Math.PI / 4
-    };
-
-    private double[] nValues = {
-        1.0,
-        1.0,
-        0.8,
-        1.2
-    };
-
-    private double[][] drValues = {
-        {1, 1, 1},
-        {2, 1, 1},
-        {1, 2, 0.5},
-        {3, -1, 1}
-    };
-
-    private double[][] dvValues = {
-        {0, 0, 1},
-        {0.2, 0, 1},
-        {0, -0.1, 0.8},
-        {0.1, 0.1, 1.2}
-    };
-
     public OrbitalAgent() {
         destination = new String[0];
     }
@@ -61,7 +32,8 @@ public class OrbitalAgent extends Agent {
     }
 
     public void init() {
-        System.out.println("OrbitalAgent(" + getId() + ") starting orbital calculation.");
+        System.out.println("OrbitalAgent(" + getId() + ") starting orbital calculation");
+        // StationData station = fetchStationData();
         runOrbitalCalculation();
 
         if (destination.length > 0) {
@@ -71,6 +43,23 @@ public class OrbitalAgent extends Agent {
         } else {
             System.out.println("Orbital result history:");
             System.out.println(resultHistory);
+        }
+    }
+
+    public void setStationData(StationData station) {
+        currentStation = station;
+    }
+
+    private StationData fetchStationData() {
+        System.out.println("currentPlace = " + currentPlace);
+        try {
+            //use the full RMI URL
+            PlaceInterface place = (PlaceInterface) Naming.lookup(currentPlace);
+            return place.getStationData();
+        }
+        catch(Exception e) {
+            e.printStackTrace();
+            return null;
         }
     }
 
@@ -162,12 +151,7 @@ public class OrbitalAgent extends Agent {
         return T;
     }
 
-    /*
-     * Multiply two matrices.
-     * @param o1 first (left) matrix
-     * @param o2 second (right) matrix
-     * @return 3x3 matrix result
-     */
+    // Multiply two matrices.
     private double[][] matrixMultiply(double[][] o1, double[][] o2) {
         double[][] prod = new double[3][3];
 
@@ -201,16 +185,10 @@ public class OrbitalAgent extends Agent {
         return result;
     }
 
-    /*
-     * Add two 3x3 matrices.
-     */
     private double[][] matrixAdd(double[][] o1, double[][] o2) {
         return elementwiseOpMatrix(1, o1, o2);
     } 
 
-    /*
-     * Subtract two 3x3 matrices.
-     */
     private double[][] matrixSub(double[][] o1, double[][] o2) {
         return elementwiseOpMatrix(-1, o1, o2);
     }
@@ -231,15 +209,7 @@ public class OrbitalAgent extends Agent {
         return elementwiseOpVector(-1, v1, v2);
     }
 
-
-
-
-    /*
-     * Apply (multiply) a matrix A to a vector x, i.e. Ax = y.
-     * @param A 3x3 matrix
-     * @param x a 3-element vector
-     * @return the 3-element vector result
-     */
+    // Apply (multiply) a matrix A to a vector x, i.e. Ax = y.
     private double[] matrixTransform(double[][] A, double[] x) {
         double[] result = new double[3];
         for(int i = 0; i < 3; i++) {
@@ -258,7 +228,6 @@ public class OrbitalAgent extends Agent {
         }
         return r;
     }
-
 
     public double[] initialImpulse(double[] dr0, double[] dv0) {
         double[][] m = new double[3][3];
@@ -286,7 +255,7 @@ public class OrbitalAgent extends Agent {
 
     // step continues to the next destination if one exists
     public void step() {
-        System.out.println("OrbitalAgent(" + getId() + ") running calculation after migration.");
+        System.out.println("OrbitalAgent(" + getId() + ") running calculation after migration:");
         runOrbitalCalculation();
 
         if (hopCount < destination.length) {
@@ -299,19 +268,21 @@ public class OrbitalAgent extends Agent {
             System.out.println(resultHistory);
         }
     }
-
+    
     private void runOrbitalCalculation() {
-        int scenario = hopCount;
+        int scenario = scenarioIndex;
 
-        if (scenario >= tValues.length) {
-            scenario = tValues.length - 1;
+        StationData station = fetchStationData();
+
+        if (station == null) {
+            System.out.println("No station data found");
+            return;
         }
 
-        double t = tValues[scenario];
-        double n = nValues[scenario];
-
-        double[] dr0 = drValues[scenario];
-        double[] dv0 = dvValues[scenario];
+        double t = station.t;
+        double n = station.n;
+        double[] dr0 = station.r;
+        double[] dv0 = station.v;
 
         initStateMatrix(t, n);
 
@@ -333,6 +304,8 @@ public class OrbitalAgent extends Agent {
             ", n=" + String.format("%.3f", n) +
             " | initial=(" + formatVector(deltaVi) + ")" +
             " | final=(" + formatVector(deltaVf) + ")\n";
+
+        scenarioIndex++;
     }
 
     private void printVector(double[] v) {
